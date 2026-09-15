@@ -1,45 +1,95 @@
 # Macky Merch API
 
-REST API built with TypeScript, Express 5, SQLite, and Vitest.
+- An API for managing merchandise products.
+- Supports creating, viewing, updating, and deleting products.
+- Uses Node.js, Express, TypeScript, SQLite, and Vitest.
 
 ## Setup
 
-Requires Node.js 24 or newer and npm. From the repository root:
+- Install Node.js 24 or newer.
+- Open a terminal in this project folder.
+- Install the libraries and start the server:
 
 ```sh
 npm install
-npm run db:setup
 npm run dev
 ```
 
-The API listens at http://localhost:3000. Setup creates `data/macky.sqlite` using
-`schema.sql`; server startup also initializes it automatically. Data persists across
-restarts. No separate database service is needed.
+- The server runs at http://localhost:3000.
+- Starting the server creates `data/macky.sqlite` and the products table automatically.
+- `schema.sql` defines the table. No separate database setup command is needed.
+- Products stay saved after restarting the server.
+- Press Ctrl+C to stop the server.
 
-```sh
-npm test
-npm run typecheck
-npm run build
-npm start
-```
+## Commands
 
-Run commands from the repository root. Optionally set `PORT` and `DATABASE_PATH`
-in your shell. To use an env file, copy `.env.example` to `.env`, build, then run
-`node --env-file=.env dist/server.js`. npm scripts do not load .env automatically.
+- `npm install`: downloads the libraries the project needs.
+- `npm run dev`: runs the server and restarts it when code changes.
+- `npm test`: runs the automated tests.
+- `npm run typecheck`: checks TypeScript types without creating files.
+- `npm run build`: converts TypeScript in `src` to JavaScript in `dist`.
+- `npm start`: runs the built server. Run `npm run build` first.
 
-## API
+## Optional settings
 
-All bodies and responses are JSON. Send `Content-Type: application/json`.
+- `PORT`: the server port. The default is `3000`.
+- `DATABASE_PATH`: the database file location. The default is `./data/macky.sqlite`.
+- Set these in your terminal before starting the server if you need different values.
+- No environment file is required or loaded automatically.
 
-| Method | Path | Success |
-| --- | --- | --- |
-| POST | /api/products | 201, created product |
-| GET | /api/products | 200, product array |
-| GET | /api/products/:id | 200, product |
-| PUT | /api/products/:id | 200, updated product |
-| DELETE | /api/products/:id | 200, success message |
+## Files
 
-Example POST body:
+- `src/server.ts`: opens the database, starts the server, and handles shutdown.
+- `src/app.ts`: sets up Express, JSON requests, routes, and error responses.
+- `src/database.ts`: opens SQLite and creates the table if needed.
+- `src/validation.ts`: checks product fields and page settings.
+- `src/products/routes.ts`: defines the five API endpoints and response codes.
+- `src/products/repository.ts`: runs SQL to read and change products.
+- `tests/products.test.ts`: sends test requests and checks the results.
+- `schema.sql`: defines the products table, default values, and data rules.
+- `package.json`: lists libraries and commands.
+- `package-lock.json`: records the exact library versions used by npm.
+- `tsconfig.json`: controls how TypeScript is checked and built.
+- `.gitignore`: lists files Git should leave out of commits.
+- `Dockerfile`: gives Docker the steps to build and run the API.
+- `.dockerignore`: lists files to leave out of the Docker build context.
+- `README.md`: explains how to run and understand the project.
+
+## Folder names
+
+- `src` means source. This is the application code you edit.
+- `tests` contains code that checks the API.
+- `node_modules` contains downloaded libraries. `npm install` creates it.
+- `dist` is short for distribution. It contains JavaScript created by `npm run build`.
+- `data` contains saved products and SQLite supporting files. Server startup creates it.
+- Git ignores `node_modules`, `dist`, and `data`.
+- Edit `src` and rebuild instead of editing `dist`.
+- Keep `data` to keep your saved products. Let SQLite manage its supporting files.
+
+## Architecture and database choice
+
+- Routes handle incoming requests and outgoing responses.
+- Validation checks the input before it reaches the database.
+- The repository handles SQL. Keeping SQL separate from routes makes the code easier to follow.
+- The app is separate from server startup so tests can use their own temporary database.
+- SQLite stores products in a file and does not need a separate database server.
+- Node includes the SQLite module, so no extra database driver is needed.
+- Database rules provide another check on saved values after input validation.
+- Database calls run synchronously, so they can block other work. This is suitable for this small project but would need review for heavy traffic.
+- Prices use SQLite REAL, a decimal approximation. Exact money calculations would benefit from storing whole cent amounts.
+
+## API endpoints
+
+- Send request bodies as JSON with `Content-Type: application/json`.
+- All API responses use JSON.
+- `POST /api/products`: creates a product and returns it with status `201`.
+- `GET /api/products`: returns an array of products with status `200`.
+- `GET /api/products/:id`: returns one product with status `200`.
+- `PUT /api/products/:id`: updates a product and returns it with status `200`.
+- `DELETE /api/products/:id`: deletes a product and returns a success message with status `200`.
+- Replace `:id` with the product ID, such as `/api/products/1`.
+
+### Example POST body
 
 ```json
 {
@@ -52,87 +102,81 @@ Example POST body:
 }
 ```
 
-`name` (1–120 characters), positive finite numeric `price`, nonnegative safe integer
-`stock`, and `category` (1–80 characters) are required on creation.
-Custom fields are `description` (up to 2000 characters, defaults to an empty string),
-`size` (1–30 characters, defaults to "One Size"), and a generated UTC `createdAt`.
-Strings are trimmed. IDs are generated positive integers.
+### Product fields
 
-PUT accepts any nonempty subset of writable fields and preserves omitted values.
-Unknown fields and changes to `id` or `createdAt` are rejected.
-Validation failures return 400 with `error` and field-level `details`;
-missing products return 404; unexpected failures return a generic JSON 500 and
-are logged on the server. Malformed JSON returns 400 and bodies over 100kb return 413.
+- `id`: a unique whole number generated by SQLite.
+- `name`: required, 1 to 120 characters.
+- `price`: required, a finite number greater than zero.
+- `stock`: required, a whole number from 0 to 9007199254740991.
+- `category`: required, 1 to 80 characters.
+- `description`: custom field, up to 2000 characters. Defaults to an empty string.
+- `size`: custom field, 1 to 30 characters. Defaults to `One Size`.
+- `createdAt`: custom field, automatically records the creation time in UTC.
+- Extra spaces at the start and end of text fields are removed.
 
-GET without query parameters returns all products in ID order. Optional
-`?page=1&limit=5` pagination preserves the array response. When pagination is used,
-page defaults to 1 and limit to 20; page must be 1–1,000,000 and limit 1–100.
-Unsupported or repeated query parameters are invalid.
+### Updates and errors
 
-## Architecture
+- PUT accepts one or more fields. Fields left out keep their current values.
+- Unknown fields are rejected. Clients cannot change `id` or `createdAt`.
+- `400`: invalid input or broken JSON. Field validation errors include details.
+- `404`: the product or route was not found.
+- `413`: the request body is larger than 100kb.
+- `415`: the request uses an unsupported encoding or character set.
+- `500`: an unexpected server error. Details are logged on the server and hidden from the response.
 
-- `src/app.ts`: application factory and shared JSON error handling.
-- `src/products/routes.ts`: HTTP routing and response handling.
-- `src/products/repository.ts`: parameterized database operations.
-- `src/validation.ts`: create, partial update, and pagination schemas.
-- `src/database.ts`: SQLite connection and schema initialization.
-- `src/server.ts`: server startup and graceful shutdown.
-- `tests/`: HTTP integration tests using a fresh SQLite database per test.
+### Pagination
 
-Routes handle HTTP concerns, the repository owns SQL, and shared schemas keep validation
-consistent across endpoints. This separation lets HTTP tests inject an isolated database
-without starting the production server. A separate service layer is unnecessary until
-business rules extend beyond these CRUD operations.
-
-SQLite is a real persistent database that keeps local setup simple. SQL constraints
-provide a second validation layer. Node's built-in SQLite module avoids native
-third-party database installation steps. Synchronous database operations are suitable
-for this small inventory assessment; a high-traffic deployment would need a review
-of database concurrency. Prices use SQLite REAL as specified; financial accounting
-would benefit from integer minor units.
+- GET returns all products in ID order when no page settings are given.
+- Use `/api/products?page=2&limit=5` to skip five products and return up to the next five.
+- With pagination, `page` defaults to 1 and `limit` defaults to 20.
+- `page` must be from 1 to 1,000,000. `limit` must be from 1 to 100.
+- Unknown or repeated query parameters are rejected.
 
 ## Implementation hurdle
 
-Create requests need defaults for optional fields, but partial updates must preserve
-existing values. Reusing a schema with creation defaults could reset description or
-size during a stock-only update. Separate create and update schemas avoid that issue;
-the CRUD integration test verifies a stock-only update preserves all other fields.
+- New products need default values for optional fields.
+- Updates need to keep existing values when fields are left out.
+- Using creation defaults during updates could reset size when only stock changes.
+- Separate create and update validation rules prevent this.
+- A test checks that changing stock keeps the other fields unchanged.
 
 ## Tests
 
-Vitest and Supertest exercise real SQL and HTTP handlers: CRUD, defaults, invalid
-data, unchanged rows after rejected updates, missing IDs, pagination, malformed JSON,
-unknown routes, sanitized internal errors, field-length and safe-integer boundaries,
-oversized bodies, unsupported charsets, and field-level error details. Tests use isolated in-memory SQLite
-databases and do not modify the development database.
+- Vitest runs the tests. Supertest sends requests to the Express app.
+- Each test uses a fresh SQLite database in memory.
+- Tests do not change your saved products.
+- Tests cover creating, reading, updating, and deleting products.
+- They also cover defaults, invalid input, missing IDs, pagination, field limits, broken JSON, large bodies, and error responses.
+- Run them with `npm test`.
 
 ## Docker
+
+- Install and start Docker.
+- Build the image and run the container:
 
 ```sh
 docker build -t macky-merch-api .
 docker run --rm -p 3000:3000 -v macky-data:/app/data macky-merch-api
 ```
 
-The named volume persists database files. The container runs as the non-root node user.
+- The first command builds the image.
+- The second starts the API on port 3000.
+- `macky-data` is a named volume that keeps the database after the container is removed.
+- The container runs as the `node` user, without root access.
 
-## References
+## Before submitting
 
-- [Node.js SQLite documentation](https://nodejs.org/api/sqlite.html)
-- [Express error handling](https://expressjs.com/en/guide/error-handling/)
+- Run these checks manually:
 
+```sh
+npm test
+npm run typecheck
+npm run build
+npm start
+```
 
-## Submission verification
-
-Run `npm test`, `npm run typecheck`, and `npm run build`, then start the compiled
-server with `npm start`. Verify Docker separately using the commands above; a
-passing local test suite does not establish that the container builds and runs.
-Commit source files and the lockfile, push to GitHub, and confirm reviewer access
-before submitting the repository link. Use feature branches and pull requests for
-subsequent changes if claiming the Git workflow bonus.
-
-## Continuous integration
-
-GitHub Actions runs the tests, typecheck, and production build on Node.js 24 for
-pushes and pull requests. It also builds the Docker image and checks that the
-container serves GET /api/products using a named database volume. Check the
-repository Actions tab for the result before submitting.
+- Stop the local server before testing Docker on the same port.
+- Run the Docker commands above to check the container.
+- Commit your source files and `package-lock.json`, then push to GitHub.
+- Check that reviewers can access the repository and submit its link.
+- Use feature branches and pull requests if claiming the Git workflow bonus.

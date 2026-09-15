@@ -3,5 +3,4 @@ dist/
 data/
 .env
 .env.*
-!.env.example
 coverage/
