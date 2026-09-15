@@ -1,0 +1,4 @@
+Source: https://github.com/skyparado/devsecops-exam-starter/actions/runs/34864755525
+Commit: 79e326c39e4fb45e36a6297291f473ccab9c87a9
+
+found 0 vulnerabilities

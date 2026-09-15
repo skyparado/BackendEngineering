@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Run tests
+        run: npm test -- --ci --runInBand
+      - name: Build image
+        run: docker build --pull -t macky-merch:ci .
+      - name: Verify non-root user and container health
+        shell: bash
+        run: |
+          test "$(docker run --rm --entrypoint id macky-merch:ci -u)" != "0"
+          docker run -d --name macky-ci -p 127.0.0.1:3000:3000 macky-merch:ci
+          trap 'docker logs macky-ci; docker rm -f macky-ci' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/health > health.json; then
+              node -e "const r = require('./health.json'); if (r.status !== 'OK') process.exit(1)"
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Scan runtime image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: macky-merch:ci
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          output: trivy-image.txt
+      - name: Preserve image scan report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: image-scan
+          path: trivy-image.txt
+          retention-days: 30
+
+  compose:
+    name: Compose smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Validate and start services
+        run: |
+          docker compose config --quiet
+          docker compose up --build --wait --wait-timeout 120
+      - name: Verify HTTP response and Redis
+        run: |
+          curl --fail http://localhost:3000/health
+          test "$(docker compose exec -T redis redis-cli ping)" = "PONG"
+      - name: Logs and cleanup
+        if: always()
+        run: |
+          docker compose logs
+          docker compose down --volumes
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Scan repository for secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          skip-dirs: .git,node_modules
+          exit-code: '1'
+
+  security:
+    name: Dependency security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Audit application dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          npm audit --audit-level=high 2>&1 | tee audit-report.txt
+      - name: Preserve dependency scan report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dependency-audit
+          path: audit-report.txt
+          retention-days: 30
