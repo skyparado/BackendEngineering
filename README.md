@@ -164,19 +164,3 @@ docker run --rm -p 3000:3000 -v macky-data:/app/data macky-merch-api
 - `macky-data` is a named volume that keeps the database after the container is removed.
 - The container runs as the `node` user, without root access.
 
-## Before submitting
-
-- Run these checks manually:
-
-```sh
-npm test
-npm run typecheck
-npm run build
-npm start
-```
-
-- Stop the local server before testing Docker on the same port.
-- Run the Docker commands above to check the container.
-- Commit your source files and `package-lock.json`, then push to GitHub.
-- Check that reviewers can access the repository and submit its link.
-- Use feature branches and pull requests if claiming the Git workflow bonus.
